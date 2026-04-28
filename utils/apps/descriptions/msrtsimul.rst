@@ -37,6 +37,8 @@ into any other pipe, the pipe name must be adjusted. Use the option
 * :option:`--seedlink` to replace *seedlink* by another name, e.g. a seedlink instance
   created as an alias, **seedlink-test**. This would write into
   *$SEISCOMP_ROOT/var/run/seedlink-test/mseedfifo*.
+* :option:`--fifo` to write directly to an arbitrary named pipe path, regardless
+  of the standard directory structure.
 * :option:`--stdout` to write to standard output and then redirect to any other location.
 
 
@@ -71,6 +73,56 @@ streams closed at current time.
       rm -rf $SEISCOMP_ROOT/var/lib/seedlink/buffer
       seiscomp start
       msrtsimul ...
+
+
+Stream filtering
+----------------
+
+The :option:`--filter` option accepts a *NET.STA.LOC.CHA* pattern with wildcards
+``*`` and ``?`` and can be specified multiple times. Only streams matching at
+least one pattern are injected. This is useful when a miniSEED file contains
+many channels but only a subset is needed for a specific test.
+
+
+Time window selection
+---------------------
+
+By default msrtsimul injects the entire file. The playback window can be
+narrowed with:
+
+* :option:`--start-time` — skip records with begin time before this UTC timestamp.
+  For large skips, :option:`--jump` is more efficient as it avoids waiting through
+  the pacing of skipped records.
+* :option:`--end-time` — stop when records reach this UTC timestamp.
+* :option:`--duration` — limit playback to this many seconds. When combined with
+  :option:`--start-time` it sets an absolute end time; otherwise the window starts
+  from the first injected record.
+
+
+Pre-filling the buffer with jumped data
+---------------------------------------
+
+By default, :option:`--jump` discards the skipped records entirely. When the
+:option:`--inject-jump` flag is also set, the records within the jump window are
+instead injected at full speed (no pacing) before the real-time portion begins.
+This pre-fills the SeedLink waveform buffer with historical data, which is
+required by modules such as :ref:`scautomt` that need a minimum amount of
+continuous waveform data (e.g. 12 minutes) before the event origin time.
+
+Example: inject 15 minutes of pre-event data at full speed, then continue in
+real time:
+
+.. code-block:: sh
+
+   msrtsimul --jump 15 --inject-jump miniSEED-file
+
+
+Looping
+-------
+
+The :option:`--loop` flag causes msrtsimul to seek back to the beginning of the
+file and repeat playback indefinitely after reaching the end. This is not
+available when reading from stdin.
 
 
 seedlink setup
@@ -108,3 +160,40 @@ Examples
    .. code-block:: sh
 
       msrtsimul -v --seedlink seedlink-test miniSEED-file
+
+#. Inject only broadband vertical channels from the AU network:
+
+   .. code-block:: sh
+
+      msrtsimul --filter 'AU.*.*.BHZ' miniSEED-file
+
+#. Inject multiple stream patterns at double speed:
+
+   .. code-block:: sh
+
+      msrtsimul -s 2 --filter 'AU.*.*.*' --filter 'IU.CTAO.*.*' miniSEED-file
+
+#. Inject a 10-minute window starting at a specific time:
+
+   .. code-block:: sh
+
+      msrtsimul --start-time 2023-06-01T04:30:00 --duration 600 miniSEED-file
+
+#. Write to an arbitrary named pipe instead of the default seedlink mseedfifo:
+
+   .. code-block:: sh
+
+      msrtsimul --fifo /path/to/custom/mseedfifo miniSEED-file
+
+#. Inject 12 minutes of pre-event data at full speed, then continue in real time
+   (required by scautomt for its pre-event waveform buffer):
+
+   .. code-block:: sh
+
+      msrtsimul --jump 12 --inject-jump miniSEED-file
+
+#. Loop a short event file continuously for demonstration purposes:
+
+   .. code-block:: sh
+
+      msrtsimul --loop -v miniSEED-file
