@@ -75,6 +75,43 @@ streams closed at current time.
       msrtsimul ...
 
 
+Compressed input files
+----------------------
+
+msrtsimul transparently decompresses :file:`.gz` and :file:`.bz2` files.
+No extra flags are needed — just pass the compressed file as the argument:
+
+.. code-block:: sh
+
+   msrtsimul event.mseed.gz
+   msrtsimul event.mseed.bz2
+
+Decompression happens on-the-fly as records are read, so there is no
+additional memory overhead beyond a normal playback.
+
+
+Sorting unsorted input
+----------------------
+
+The input file must be sorted by end_time for correct real-time pacing.
+If this requirement cannot be guaranteed, use :option:`--sort` to have
+msrtsimul sort the records at startup before playback begins:
+
+.. code-block:: sh
+
+   msrtsimul --sort unsorted.mseed
+
+.. note::
+
+   :option:`--sort` reads the entire file into memory. For large files it is
+   more efficient to sort beforehand with :ref:`scmssort`:
+
+   .. code-block:: sh
+
+      scmssort -u -E 'unsorted.mseed' > sorted.mseed
+      msrtsimul sorted.mseed
+
+
 Stream filtering
 ----------------
 

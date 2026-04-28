@@ -13,6 +13,12 @@
 					use -vv for debug output.
 					</description>
 				</option>
+				<option flag="q" long-flag="quiet" argument="">
+					<description>
+					Suppress the startup banner and end-of-run summary.
+					Warnings and errors are still shown.
+					</description>
+				</option>
 			</group>
 			<group name="Playback">
 				<option flag="c" long-flag="stdout" argument="">
@@ -96,6 +102,14 @@
 					Maximum playback window in seconds. Combined with --start-time
 					it sets an absolute end time; otherwise measured from the
 					first injected record.
+					</description>
+				</option>
+				<option flag="" long-flag="sort" argument="" unit="">
+					<description>
+					Sort records by end_time before playback. The entire file is
+					read into memory at startup. Use only when the input is not
+					already time-ordered and running scmssort first is not practical.
+					Not available when reading from stdin.
 					</description>
 				</option>
 				<option flag="" long-flag="test" argument="" unit="">

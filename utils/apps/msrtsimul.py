@@ -2,9 +2,11 @@
 
 from __future__ import absolute_import, division, print_function
 
+import bz2
 import calendar
 import datetime
 import fnmatch
+import gzip
 import logging
 import math
 import os
@@ -17,6 +19,16 @@ from seiscomp import mseedlite as mseed
 
 
 logger = logging.getLogger("msrtsimul")
+
+
+# ------------------------------------------------------------------------------
+def open_input(path):
+    """Open a MiniSEED file for reading, transparently decompressing gz/bz2."""
+    if path.endswith(".gz"):
+        return gzip.open(path, "rb")
+    if path.endswith(".bz2"):
+        return bz2.open(path, "rb")
+    return open(path, "rb")
 
 
 # ------------------------------------------------------------------------------
@@ -65,7 +77,7 @@ def read_mseed_with_delays(delaydict, reciterable):
 
 
 # ------------------------------------------------------------------------------
-def rt_simul(f, speed=1.0, jump=0.0, inject_jump=False, delaydict=None):
+def rt_simul(f, speed=1.0, jump=0.0, inject_jump=False, sort=False, delaydict=None):
     """
     Iterator to simulate "real-time" MSeed input
 
@@ -75,20 +87,33 @@ def rt_simul(f, speed=1.0, jump=0.0, inject_jump=False, delaydict=None):
     demonstrating real-time processing using real data of past events.
 
     The data in the input file may be multiplexed, but *must* be sorted by
-    time, e.g. using 'mssort'.
+    time unless sort=True is given, e.g. using 'mssort'.
+
+    When sort=True the entire file is read into memory and sorted by end_time
+    before playback begins. This is a one-time startup cost proportional to
+    file size.
 
     When inject_jump is True, records within the jump window are yielded at
     full speed (no pacing) instead of being discarded. This pre-fills the
     SeedLink buffer with historical data before the real-time portion starts,
     which is required by modules like scautomt that need a buffer of waveforms
     prior to the event origin time.
+
+    Uses time.monotonic() for pacing so that NTP clock adjustments during
+    long playbacks do not cause bursts or pauses.
     """
-    rtime = time.time()
+    # time.monotonic() is used for pacing: immune to NTP clock jumps.
+    rtime = time.monotonic()
     etime = None
     skipping = True
+
     record_iterable = mseed.Input(f)
+    if sort:
+        logger.info("Sorting records by end_time (reads entire file into memory)")
+        record_iterable = iter(sorted(record_iterable, key=lambda r: r.end_time))
     if delaydict:
         record_iterable = read_mseed_with_delays(delaydict, record_iterable)
+
     for rec in record_iterable:
         if delaydict:
             rec_time = rec[0]
@@ -106,7 +131,7 @@ def rt_simul(f, speed=1.0, jump=0.0, inject_jump=False, delaydict=None):
             etime = rec_time
             skipping = False
 
-        tmax = etime + speed * (time.time() - rtime)
+        tmax = etime + speed * (time.monotonic() - rtime)
         ms = 1000000.0 * (rec.nsamp / rec.fsamp)
         last_sample_time = rec.begin_time + datetime.timedelta(microseconds=ms)
         last_sample_time = calendar.timegm(last_sample_time.timetuple())
@@ -131,7 +156,10 @@ def parse_args():
         "file",
         nargs="?",
         metavar="miniSEED-file",
-        help="MiniSEED file to read. Omit or use '-' to read from stdin.",
+        help=(
+            "MiniSEED file to read. Omit or use '-' to read from stdin. "
+            "Compressed files are supported: .gz and .bz2 are decompressed transparently."
+        ),
     )
 
     grp_v = parser.add_argument_group("Verbosity")
@@ -139,6 +167,11 @@ def parse_args():
         "-v", "--verbose",
         action="count", default=0,
         help="Increase verbosity. -v prints each record; -vv enables debug output.",
+    )
+    grp_v.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="Suppress the startup banner and end-of-run summary. Warnings and errors are still shown.",
     )
 
     grp_p = parser.add_argument_group("Playback")
@@ -207,6 +240,16 @@ def parse_args():
         "-s", "--speed",
         type=float, default=1.0, metavar="FACTOR",
         help="Speed factor (float, default: 1.0).",
+    )
+    grp_p.add_argument(
+        "--sort",
+        action="store_true",
+        help=(
+            "Sort records by end_time before playback. "
+            "Reads the entire file into memory at startup — use only when "
+            "the input is not already time-ordered and running scmssort first "
+            "is not practical. Not available when reading from stdin."
+        ),
     )
     grp_p.add_argument(
         "--start-time",
@@ -357,10 +400,13 @@ def main():
     if from_stdin:
         logger.info("Input: stdin")
         ifile = sys.stdin.buffer
+        if args.sort:
+            print("WARNING: --sort ignored when reading from stdin", file=sys.stderr)
+            args.sort = False
     else:
         logger.info(f"Input: {args.file}")
         try:
-            ifile = open(args.file, "rb")
+            ifile = open_input(args.file)
         except IOError as e:
             print(f"ERROR: could not open '{args.file}': {e}", file=sys.stderr)
             sys.exit(1)
@@ -397,10 +443,11 @@ def main():
     t_start = time.time()
     loop_count = 0
 
-    print(
-        f"Starting msrtsimul at {datetime.datetime.now(datetime.UTC)}",
-        file=sys.stderr,
-    )
+    if not args.quiet:
+        print(
+            f"Starting msrtsimul at {datetime.datetime.now(datetime.UTC)}",
+            file=sys.stderr,
+        )
 
     try:
         while True:
@@ -413,6 +460,7 @@ def main():
                 speed=args.speed,
                 jump=args.jump,
                 inject_jump=args.inject_jump,
+                sort=args.sort,
                 delaydict=delaydict,
             )
             time_diff = None
@@ -503,16 +551,17 @@ def main():
         if not args.stdout and not args.test:
             out_channel.close()
 
-    elapsed = time.time() - t_start
-    loop_info = f", {loop_count} extra loop(s)" if loop_count > 0 else ""
-    print(
-        f"msrtsimul finished: {elapsed:.1f}s elapsed | "
-        f"{n_written} records written | "
-        f"{n_skipped_size} skipped (size) | "
-        f"{n_skipped_filter} skipped (filter) | "
-        f"{len(streams_seen)} streams{loop_info}",
-        file=sys.stderr,
-    )
+    if not args.quiet:
+        elapsed = time.time() - t_start
+        loop_info = f", {loop_count} extra loop(s)" if loop_count > 0 else ""
+        print(
+            f"msrtsimul finished: {elapsed:.1f}s elapsed | "
+            f"{n_written} records written | "
+            f"{n_skipped_size} skipped (size) | "
+            f"{n_skipped_filter} skipped (filter) | "
+            f"{len(streams_seen)} streams{loop_info}",
+            file=sys.stderr,
+        )
 
     return 0
 
