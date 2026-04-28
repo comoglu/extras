@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<seiscomp>
+	<module name="msrtsimul2" category="Acquisition" standalone="true">
+		<description>MiniSEED real time playback and simulation (extended)</description>
+		<command-line>
+			<synopsis>
+				msrtsimul2 [OPTION] miniSEED-file
+			</synopsis>
+			<group name="Verbosity">
+				<option flag="v" long-flag="verbose" argument="">
+					<description>
+					Increase verbosity. Use -v to print each record to stderr;
+					use -vv for debug output.
+					</description>
+				</option>
+				<option flag="q" long-flag="quiet" argument="">
+					<description>
+					Suppress the startup banner and end-of-run summary.
+					Warnings and errors are still shown.
+					</description>
+				</option>
+			</group>
+			<group name="Playback">
+				<option flag="c" long-flag="stdout" argument="">
+					<description>
+					Write on standard output. The output may be redirected to a
+					specific mseedfifo path.
+					</description>
+				</option>
+				<option flag="d" long-flag="delays" argument="file" unit="">
+					<description>
+					File with per-station artificial delays. One entry per line
+					in the format 'NET.STA: seconds'.
+					</description>
+				</option>
+				<option flag="" long-flag="fifo" argument="path" unit="">
+					<description>
+					Write directly to this named pipe path. Overrides --seedlink.
+					Useful when the mseedfifo is not in the default location.
+					</description>
+				</option>
+				<option flag="" long-flag="filter" argument="NET.STA.LOC.CHA" unit="">
+					<description>
+					Only inject streams matching this pattern. Wildcards * and ?
+					are accepted. May be specified multiple times,
+					e.g. --filter AU.*.*.BHZ --filter IU.CTAO.*.*.
+					</description>
+				</option>
+				<option flag="j" long-flag="jump" argument="float" unit="minutes">
+					<description>
+					Minutes to skip at the beginning.
+					</description>
+				</option>
+				<option flag="" long-flag="inject-jump" argument="" unit="">
+					<description>
+					Inject jumped records at full speed instead of discarding them.
+					Useful when downstream modules (e.g. scautomt) need a pre-event
+					waveform buffer: --jump sets the window size and --inject-jump
+					pushes those records into SeedLink at maximum speed before the
+					real-time playback begins.
+					</description>
+				</option>
+				<option flag="" long-flag="loop" argument="" unit="">
+					<description>
+					Repeat playback from file start when EOF is reached.
+					Not valid when reading from stdin.
+					</description>
+				</option>
+				<option flag="m" long-flag="mode" argument="string" unit="" values="realtime,historic">
+					<description>
+					Playback mode: 'realtime' (default, record times shifted to now)
+					or 'historic' (record times preserved).
+					</description>
+				</option>
+				<option flag="" long-flag="seedlink" argument="string" unit="">
+					<description>
+					The seedlink module name. Useful if a seedlink alias or
+					non-standard names are used. Replaces 'seedlink'
+					in the standard mseedfifo path.
+					</description>
+				</option>
+				<option flag="s" long-flag="speed" argument="float" unit="">
+					<description>
+					Speed factor. 1 is normal speed.
+					</description>
+				</option>
+				<option flag="" long-flag="sort" argument="" unit="">
+					<description>
+					Sort records by end_time before playback. The entire file is
+					read into memory at startup. Use only when the input is not
+					already time-ordered and running scmssort first is not practical.
+					Not available when reading from stdin.
+					</description>
+				</option>
+				<option flag="" long-flag="start-time" argument="string" unit="">
+					<description>
+					Only inject records at or after this UTC time (ISO 8601,
+					e.g. 2023-01-01T12:00:00). For large skips --jump is
+					more efficient as it avoids pacing over skipped records.
+					</description>
+				</option>
+				<option flag="" long-flag="end-time" argument="string" unit="">
+					<description>
+					Stop injecting records once they reach this UTC time (ISO 8601).
+					</description>
+				</option>
+				<option flag="" long-flag="duration" argument="float" unit="seconds">
+					<description>
+					Maximum playback window in seconds. Combined with --start-time
+					it sets an absolute end time; otherwise measured from the
+					first injected record.
+					</description>
+				</option>
+				<option flag="" long-flag="test" argument="" unit="">
+					<description>
+					Test mode: read and process records but do not write output.
+					</description>
+				</option>
+				<option flag="u" long-flag="unlimited" argument="" unit="">
+					<description>
+					Allow miniSEED records of any size. By default only 512-byte
+					records are passed to SeedLink. Records of other sizes can be
+					repacked with msrepack from libmseed.
+					</description>
+				</option>
+			</group>
+		</command-line>
+	</module>
+</seiscomp>
