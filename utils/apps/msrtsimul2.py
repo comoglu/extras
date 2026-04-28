@@ -420,34 +420,6 @@ def main():
 
     out_channel = open_output(args)
 
-    # When --inject-jump is active in realtime mode, pre-compute time_diff
-    # anchored to the jump boundary (T_file_start + jump minutes) so that:
-    #   inject_jump records land at  NOW-jump_duration → NOW  in SeedLink
-    #   real-time records start at   NOW
-    # Without this, time_diff would be anchored to the first inject_jump
-    # record and all data would appear jump_duration minutes AHEAD of now.
-    inject_time_diff = None
-    if args.inject_jump and args.jump > 0 and not from_stdin and args.mode == "realtime":
-        try:
-            with open_input(args.file) as peek_f:
-                first_rec = next(mseed.Input(peek_f), None)
-            if first_rec is not None:
-                ms = 1000000.0 * (first_rec.nsamp / first_rec.fsamp)
-                inject_time_diff = (
-                    datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
-                    - first_rec.begin_time
-                    - datetime.timedelta(minutes=args.jump)
-                    - datetime.timedelta(microseconds=ms)
-                )
-                logger.info(
-                    f"inject_jump: time_diff anchored to jump boundary "
-                    f"({args.jump} min); inject records → past, real-time → NOW"
-                )
-        except Exception as e:
-            logger.warning(
-                f"Could not pre-compute inject_jump time_diff, "
-                f"falling back to first-record anchor: {e}"
-            )
 
     # Run statistics
     n_written = 0
@@ -518,21 +490,18 @@ def main():
                 if rec.rectype not in ("D", "R", "Q"):
                     rec.rectype = "D"
 
-                # Compute realtime offset once.
-                # With --inject-jump: use the pre-computed offset anchored to
-                # the jump boundary so inject records land in the recent past
-                # and real-time records start at NOW.
-                # Otherwise: anchor to the first injected record as usual.
+                # Compute realtime offset once, anchored to the first injected record.
+                # With --inject-jump: subtract the jump window so inject records land
+                # in the recent past (NOW-jump → NOW) and real-time records start at NOW.
                 if time_diff is None:
-                    if inject_time_diff is not None:
-                        time_diff = inject_time_diff
-                    else:
-                        ms = 1000000.0 * (rec.nsamp / rec.fsamp)
-                        time_diff = (
-                            datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
-                            - rec.begin_time
-                            - datetime.timedelta(microseconds=ms)
-                        )
+                    ms = 1000000.0 * (rec.nsamp / rec.fsamp)
+                    time_diff = (
+                        datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+                        - rec.begin_time
+                        - datetime.timedelta(microseconds=ms)
+                    )
+                    if args.inject_jump and args.mode == "realtime":
+                        time_diff -= datetime.timedelta(minutes=args.jump)
 
                 if args.mode == "realtime":
                     rec.begin_time += time_diff
